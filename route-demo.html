@@ -392,14 +392,17 @@
   .mobile-toggle, .fab-schedule, .mobile-backdrop { display: none; }
 
   /* ============================================================
-   * MOBILE LAYOUT (<= 820px)
+   * MOBILE LAYOUT
+   * - Triggers on narrow viewports OR touch-primary devices
+   *   (the latter catches phones inside preview iframes where
+   *   the iframe viewport is wider than the device).
    * - Map fills the screen.
    * - Sidebar slides in from the left as a drawer.
    * - Schedule slides in from the right as a drawer.
    * - Hamburger (top-left) opens controls; floating button
    *   (bottom-right) opens the schedule.
    * ============================================================ */
-  @media (max-width: 820px) {
+  @media (max-width: 820px), (pointer: coarse) {
     .topbar { height: 48px; padding: 0 10px; }
     .topbar .logo { font-size: 14px; padding: 3px 8px; margin-right: 8px; }
     .topbar .title { font-size: 14px; }
@@ -1287,7 +1290,7 @@ async function runOptimize() {
     const elapsed = Math.round(performance.now() - t0);
 
     state.result = result;
-    renderRoute(result);
+    try { renderRoute(result); } catch (e) { console.warn("renderRoute skipped:", e); }
     renderResults(result);
     renderSchedule(result);
 
@@ -1401,27 +1404,52 @@ function updateFabBadge(count) {
   else { b.classList.add("hidden"); }
 }
 
-/* ---- Boot ---- */
-function boot() {
-  // Guard: Leaflet may still be loading (e.g. when this file is served
-  // via html-preview.github.io which proxies external scripts).
+/* ---- Boot ----
+ * UI renders immediately, independent of Leaflet. The map then loads
+ * when window.L is available; if it never loads (CSP-blocked CDN, etc.)
+ * the controls still work and we show an inline error.
+ */
+function bootUi() {
+  try {
+    renderVehicles();
+    bindControls();
+    state.stops = generateStops(state.stopCount);
+  } catch (e) {
+    console.error("UI boot failed:", e);
+  }
+}
+
+function bootMap() {
   if (typeof L === "undefined") {
-    boot._tries = (boot._tries || 0) + 1;
-    if (boot._tries > 200) { // ~10s max
-      document.getElementById("map").innerHTML =
-        '<div style="padding:24px;color:#991b1b;font:14px sans-serif">' +
-        'Leaflet kon niet geladen worden. Controleer je internetverbinding ' +
-        'of open dit bestand direct (niet via een preview-proxy).</div>';
+    bootMap._tries = (bootMap._tries || 0) + 1;
+    if (bootMap._tries > 200) {
+      const el = document.getElementById("map");
+      if (el) el.innerHTML =
+        '<div style="padding:24px;color:#991b1b;font:14px sans-serif;line-height:1.5">' +
+        '<b>Kaart niet geladen.</b><br/>' +
+        'Leaflet (CDN) kon niet worden gedownload. Dit gebeurt vaak in ' +
+        'preview-iframes (html-preview.github.io) door CSP. Probeer ' +
+        '<code>raw.githack.com</code> of open het bestand lokaal.</div>';
       return;
     }
-    setTimeout(boot, 50);
+    setTimeout(bootMap, 50);
     return;
   }
-  initMap();
-  renderVehicles();
-  bindControls();
-  state.stops = generateStops(state.stopCount);
-  renderStopsOnMap(state.stops);
+  try {
+    initMap();
+    renderStopsOnMap(state.stops);
+  } catch (e) {
+    console.error("Map init failed:", e);
+    const el = document.getElementById("map");
+    if (el) el.innerHTML =
+      '<div style="padding:24px;color:#991b1b;font:14px sans-serif">' +
+      'Kaart-initialisatie mislukt: ' + (e && e.message ? e.message : e) + '</div>';
+  }
+}
+
+function boot() {
+  bootUi();
+  bootMap();
 }
 
 if (document.readyState === "loading") {
