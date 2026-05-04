@@ -1,0 +1,1220 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>bpost Route Optimalisatie — Demo</title>
+<link
+  rel="stylesheet"
+  href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+  crossorigin=""
+/>
+<style>
+  :root {
+    --bpost-red: #E2231A;
+    --bpost-yellow: #FFCC00;
+    --bpost-red-dark: #B81C14;
+    --bg: #f4f5f7;
+    --panel: #ffffff;
+    --text: #1d1d1f;
+    --muted: #6b7280;
+    --border: #e5e7eb;
+    --prio: #E2231A;
+    --normal: #2563eb;
+    --depot: #111827;
+    --shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+      "Helvetica Neue", Arial, sans-serif;
+    color: var(--text);
+    background: var(--bg);
+    overflow: hidden;
+  }
+
+  /* ---- Layout ---- */
+  .app { display: flex; flex-direction: column; height: 100vh; }
+  .topbar {
+    height: 52px;
+    background: var(--bpost-red);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    box-shadow: var(--shadow);
+    z-index: 1000;
+  }
+  .topbar .logo {
+    font-weight: 800;
+    font-size: 18px;
+    letter-spacing: 0.5px;
+    background: var(--bpost-yellow);
+    color: var(--bpost-red);
+    padding: 4px 10px;
+    border-radius: 4px;
+    margin-right: 12px;
+  }
+  .topbar .title { font-weight: 600; font-size: 16px; }
+  .topbar .sub { font-weight: 400; opacity: 0.9; margin-left: 8px; font-size: 13px; }
+
+  .main { flex: 1; display: flex; min-height: 0; }
+
+  /* ---- Sidebar ---- */
+  .sidebar {
+    width: 320px;
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    padding: 16px;
+    flex-shrink: 0;
+  }
+
+  .section { margin-bottom: 18px; }
+  .section h3 {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.7px;
+    color: var(--muted);
+    margin: 0 0 8px 0;
+    font-weight: 700;
+  }
+
+  .vehicle-options { display: flex; flex-direction: column; gap: 6px; }
+  .vehicle-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    background: #fff;
+  }
+  .vehicle-card:hover { border-color: var(--bpost-red); }
+  .vehicle-card input[type=radio] { accent-color: var(--bpost-red); }
+  .vehicle-card.selected {
+    border-color: var(--bpost-red);
+    background: #fff5f4;
+  }
+  .vehicle-icon {
+    width: 32px; height: 32px;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--bpost-yellow);
+    border-radius: 6px;
+    font-size: 18px;
+  }
+  .vehicle-info { flex: 1; }
+  .vehicle-info .name { font-weight: 600; font-size: 14px; }
+  .vehicle-info .meta { font-size: 11px; color: var(--muted); }
+
+  .slider-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 4px;
+  }
+  input[type=range] {
+    width: 100%;
+    accent-color: var(--bpost-red);
+  }
+
+  .toggle-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 0;
+    font-size: 14px;
+  }
+
+  .switch { position: relative; width: 40px; height: 22px; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .switch .slider {
+    position: absolute; cursor: pointer;
+    inset: 0; background: #d1d5db;
+    border-radius: 22px;
+    transition: 0.2s;
+  }
+  .switch .slider::before {
+    content: ""; position: absolute;
+    height: 16px; width: 16px;
+    left: 3px; bottom: 3px;
+    background: #fff;
+    border-radius: 50%;
+    transition: 0.2s;
+  }
+  .switch input:checked + .slider { background: var(--bpost-red); }
+  .switch input:checked + .slider::before { transform: translateX(18px); }
+
+  .number-input {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 14px;
+    font-family: inherit;
+  }
+  .number-input:focus {
+    outline: none;
+    border-color: var(--bpost-red);
+    box-shadow: 0 0 0 2px rgba(226,35,26,0.15);
+  }
+
+  .label { font-size: 13px; color: #374151; margin-bottom: 6px; display: block; font-weight: 500; }
+
+  .btn-primary {
+    width: 100%;
+    padding: 11px 16px;
+    background: var(--bpost-red);
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    transition: background 0.15s;
+  }
+  .btn-primary:hover:not(:disabled) { background: var(--bpost-red-dark); }
+  .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
+
+  .btn-secondary {
+    width: 100%;
+    padding: 9px 16px;
+    background: #fff;
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .btn-secondary:hover { background: #f9fafb; border-color: #d1d5db; }
+
+  .spinner {
+    width: 14px; height: 14px;
+    border: 2px solid rgba(255,255,255,0.4);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    display: none;
+  }
+  .btn-primary.loading .spinner { display: inline-block; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ---- Results ---- */
+  .results {
+    background: linear-gradient(135deg, #fff5f4 0%, #fffbe6 100%);
+    border: 1px solid #ffe5e2;
+    border-radius: 8px;
+    padding: 12px;
+    margin-top: 8px;
+  }
+  .stat-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .stat {
+    background: #fff;
+    border-radius: 6px;
+    padding: 8px 10px;
+    border: 1px solid #f3f4f6;
+  }
+  .stat .v { font-size: 18px; font-weight: 700; color: var(--text); }
+  .stat .l { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; }
+  .stat.violation .v { color: var(--bpost-red); }
+  .results .empty { color: var(--muted); font-size: 13px; text-align: center; padding: 8px; }
+
+  /* ---- Map ---- */
+  .map-wrap { flex: 1; position: relative; }
+  #map { width: 100%; height: 100%; }
+  .legend {
+    position: absolute;
+    bottom: 16px;
+    left: 16px;
+    background: rgba(255,255,255,0.95);
+    padding: 10px 12px;
+    border-radius: 8px;
+    box-shadow: var(--shadow);
+    font-size: 12px;
+    z-index: 500;
+  }
+  .legend .row { display: flex; align-items: center; gap: 6px; margin: 3px 0; }
+  .legend .dot { width: 12px; height: 12px; border-radius: 50%; }
+
+  /* ---- Right panel ---- */
+  .right-panel {
+    width: 340px;
+    background: var(--panel);
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    transition: width 0.25s ease;
+    flex-shrink: 0;
+  }
+  .right-panel.collapsed { width: 36px; }
+  .right-panel.collapsed .right-content,
+  .right-panel.collapsed .right-header h3 { display: none; }
+  .right-header {
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-weight: 600;
+    font-size: 14px;
+  }
+  .right-header h3 { margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); }
+  .toggle-btn {
+    background: none; border: none;
+    cursor: pointer;
+    width: 24px; height: 24px;
+    border-radius: 4px;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--muted);
+  }
+  .toggle-btn:hover { background: #f3f4f6; }
+  .right-content { flex: 1; overflow-y: auto; }
+  .stop-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 14px;
+    border-bottom: 1px solid #f3f4f6;
+    font-size: 13px;
+    cursor: pointer;
+    transition: background 0.1s;
+  }
+  .stop-item:hover { background: #f9fafb; }
+  .stop-item.violation { background: #fff5f4; }
+  .stop-num {
+    background: var(--normal);
+    color: #fff;
+    border-radius: 50%;
+    width: 26px; height: 26px;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700;
+    font-size: 12px;
+    flex-shrink: 0;
+  }
+  .stop-num.prio { background: var(--prio); }
+  .stop-info { flex: 1; min-width: 0; }
+  .stop-info .addr { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .stop-info .meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .badge {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: 600;
+    margin-left: 4px;
+  }
+  .badge.tw { background: #e0f2fe; color: #075985; }
+  .badge.violation { background: #fee2e2; color: #991b1b; }
+  .badge.prio { background: #fde68a; color: #92400e; }
+
+  /* ---- Custom Leaflet markers ---- */
+  .num-marker {
+    background: var(--normal);
+    color: #fff;
+    border-radius: 50%;
+    width: 28px; height: 28px;
+    line-height: 28px;
+    text-align: center;
+    font-weight: 700;
+    font-size: 11px;
+    border: 2px solid #fff;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+  }
+  .num-marker.prio { background: var(--prio); }
+  .num-marker.depot {
+    background: var(--depot);
+    width: 36px; height: 36px;
+    line-height: 36px;
+    font-size: 16px;
+  }
+
+  /* ---- Empty state ---- */
+  .empty-msg {
+    padding: 40px 20px;
+    text-align: center;
+    color: var(--muted);
+    font-size: 13px;
+  }
+
+  /* ---- Toast ---- */
+  .toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #1f2937;
+    color: #fff;
+    padding: 10px 16px;
+    border-radius: 6px;
+    font-size: 13px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    z-index: 2000;
+    opacity: 0;
+    transition: opacity 0.2s;
+    pointer-events: none;
+  }
+  .toast.show { opacity: 1; }
+
+  /* Marker highlight (hover from schedule list) */
+  .num-marker.highlight {
+    transform: scale(1.4);
+    box-shadow: 0 0 0 4px rgba(255,204,0,0.6), 0 2px 6px rgba(0,0,0,0.4);
+    z-index: 999 !important;
+  }
+  .num-marker { transition: transform 0.15s, box-shadow 0.15s; }
+
+  /* Scrollbars */
+  .right-content::-webkit-scrollbar,
+  .sidebar::-webkit-scrollbar { width: 6px; }
+  .right-content::-webkit-scrollbar-thumb,
+  .sidebar::-webkit-scrollbar-thumb {
+    background: #d1d5db; border-radius: 3px;
+  }
+
+  hr.divider { border: 0; border-top: 1px solid var(--border); margin: 14px 0; }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <span class="logo">bpost</span>
+    <span class="title">RouteOptimizer</span>
+    <span class="sub">— Demo</span>
+  </header>
+
+  <div class="main">
+    <!-- LEFT SIDEBAR -->
+    <aside class="sidebar">
+      <div class="section">
+        <h3>Voertuig</h3>
+        <div class="vehicle-options" id="vehicleOptions"></div>
+      </div>
+
+      <div class="section">
+        <h3>Optimalisatie</h3>
+        <label class="label">Optimaliseren op</label>
+        <input type="range" id="weightSlider" min="0" max="100" value="50" />
+        <div class="slider-row">
+          <span>Afstand</span>
+          <span id="weightVal">50/50</span>
+          <span>Tijd</span>
+        </div>
+      </div>
+
+      <div class="section">
+        <h3>Filters</h3>
+        <div class="toggle-row">
+          <span>Respecteer tijdsvensters</span>
+          <label class="switch">
+            <input type="checkbox" id="tglWindows" checked />
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="toggle-row">
+          <span>Alleen prioritaire post</span>
+          <label class="switch">
+            <input type="checkbox" id="tglPrio" />
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="section">
+        <h3>Aantal stops</h3>
+        <input type="number" id="stopCount" class="number-input"
+               min="10" max="250" value="100" step="10" />
+      </div>
+
+      <button id="optimizeBtn" class="btn-primary">
+        <span class="spinner"></span>
+        <span class="btn-label">Optimaliseer route</span>
+      </button>
+      <button id="resetBtn" class="btn-secondary" style="margin-top:8px">
+        Reset (nieuwe stops)
+      </button>
+
+      <hr class="divider" />
+
+      <div class="section" style="margin-bottom:0">
+        <h3>Resultaten</h3>
+        <div class="results" id="results">
+          <div class="empty">Nog geen route berekend.</div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- CENTER MAP -->
+    <div class="map-wrap">
+      <div id="map"></div>
+      <div class="legend">
+        <div class="row"><span class="dot" style="background:var(--depot)"></span> Depot</div>
+        <div class="row"><span class="dot" style="background:var(--prio)"></span> Prioritair</div>
+        <div class="row"><span class="dot" style="background:var(--normal)"></span> Normaal</div>
+      </div>
+    </div>
+
+    <!-- RIGHT PANEL -->
+    <aside class="right-panel" id="rightPanel">
+      <div class="right-header">
+        <h3>Schema</h3>
+        <button class="toggle-btn" id="toggleRight" title="Schakel paneel">›</button>
+      </div>
+      <div class="right-content" id="scheduleList">
+        <div class="empty-msg">Bereken een route om het schema te zien.</div>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script
+  src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+  integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+  crossorigin=""
+></script>
+
+<script>
+/* ============================================================
+ * bpost RouteOptimizer — single-file demo
+ * No backend, no build step, no API keys.
+ *
+ * ============================================================
+ * TODO / PRODUCTION INTEGRATIONS
+ * ------------------------------------------------------------
+ * [ ] OSRM Docker (road distance matrix)
+ *       Replace `buildDistanceMatrix` with a single POST to
+ *       /table?annotations=duration,distance against a private
+ *       OSRM container (Belgium PBF extract).
+ *       SWAP POINT: see RoutingEngine.buildDistanceMatrix
+ *
+ * [ ] OR-Tools VRP (real solver)
+ *       Replace nearestNeighbour + twoOpt with OR-Tools
+ *       (WASM build for browser, or backend microservice). Feed
+ *       it: cost matrix, vehicle caps, demands, time windows,
+ *       service times, multi-depot.
+ *       SWAP POINT: see RoutingEngine.optimize → solver section
+ *
+ * [ ] bpost CSV / KLARA address import
+ *       Replace generateStops() with parser for KLARA exports
+ *       (geocoded postal addresses + parcel manifest).
+ *       SWAP POINT: see DATA GENERATION section
+ *
+ * [ ] Real vehicle fleet API
+ *       Replace static VEHICLES map with live fleet endpoint
+ *       (availability, current battery for eVan, driver shifts).
+ *
+ * [ ] NPS / complaints overlay
+ *       Add heatmap layer of recent customer complaints/NPS so
+ *       planners can bias routing away from problem zones.
+ *
+ * [ ] Persistence & multi-route planning
+ *       Save/load plans, compare scenarios, export GPX/PDF
+ *       for the courier.
+ * ============================================================
+ */
+
+/* ---- Constants ---- */
+const BRUSSELS = { lat: 50.8503, lng: 4.3517 };
+const RADIUS_KM = 15;
+
+const VEHICLES = {
+  bike:  { id: "bike",  name: "Fiets",          icon: "🚲", maxStops: 80,  speedKmh: 12, allowed: ["letter","small"] },
+  van:   { id: "van",   name: "Bestelwagen",    icon: "🚐", maxStops: 250, speedKmh: 35, allowed: ["letter","small","large"] },
+  evan:  { id: "evan",  name: "eBestelwagen",   icon: "⚡", maxStops: 200, speedKmh: 30, allowed: ["letter","small","large"] },
+};
+
+const STREET_NAMES = [
+  "Rue de la Loi","Avenue Louise","Boulevard Anspach","Rue Royale",
+  "Chaussée de Wavre","Rue Neuve","Avenue de Tervueren","Rue Belliard",
+  "Boulevard du Midi","Rue du Marché aux Herbes","Avenue de la Toison d'Or",
+  "Rue des Bouchers","Place du Jeu de Balle","Rue Antoine Dansaert",
+  "Avenue de Stalingrad","Rue de Flandre","Boulevard Adolphe Max",
+  "Avenue Brugmann","Rue Vanderkindere","Chaussée de Charleroi",
+  "Rue de Namur","Place Sainte-Catherine","Rue Haute","Rue du Bailli",
+  "Avenue Molière","Rue Defacqz","Place Flagey","Avenue Franklin Roosevelt"
+];
+const COMMUNES = ["1000 Bruxelles","1050 Ixelles","1060 Saint-Gilles","1180 Uccle",
+                  "1030 Schaerbeek","1040 Etterbeek","1140 Evere","1150 Woluwe",
+                  "1080 Molenbeek","1190 Forest","1170 Watermael-Boitsfort"];
+
+/* ===== DATA GENERATION ===== */
+/* Brussels-centered, denser near center, realistic mix.
+ * SWAP POINT: replace generateStops() with bpost CSV / KLARA
+ * address import in production. */
+function seededRand(seed) {
+  let s = seed | 0;
+  return function () {
+    s = (s * 1664525 + 1013904223) | 0;
+    return ((s >>> 0) % 1000000) / 1000000;
+  };
+}
+
+function generateStops(n, seed = 42) {
+  const rand = seededRand(seed);
+  const stops = [];
+  for (let i = 0; i < n; i++) {
+    // Bias toward center: r = R * sqrt(u)^1.5 makes denser core.
+    const u = rand();
+    const distKm = RADIUS_KM * Math.pow(u, 1.7);
+    const angle = rand() * Math.PI * 2;
+    // 1 deg lat ~ 111km; 1 deg lng ~ 111 * cos(lat) km
+    const dLat = (distKm * Math.cos(angle)) / 111;
+    const dLng = (distKm * Math.sin(angle)) / (111 * Math.cos(BRUSSELS.lat * Math.PI/180));
+    const lat = BRUSSELS.lat + dLat;
+    const lng = BRUSSELS.lng + dLng;
+
+    const priority = rand() < 0.25 ? 1 : 2;
+    const serviceTimeMin = priority === 1 ? 2 + Math.floor(rand()*2) : 3 + Math.floor(rand()*4);
+
+    const typeRoll = rand();
+    const parcelType = typeRoll < 0.55 ? "letter" : typeRoll < 0.85 ? "small" : "large";
+
+    const hasWindow = rand() < 0.30;
+    let timeWindow = null;
+    if (hasWindow) {
+      const startHour = 9 + Math.floor(rand() * 6);   // 9..14
+      const length = 1 + Math.floor(rand() * 3);       // 1..3 hours
+      const endHour = Math.min(startHour + length, 17);
+      timeWindow = {
+        start: String(startHour).padStart(2,"0") + ":00",
+        end:   String(endHour).padStart(2,"0") + ":00"
+      };
+    }
+
+    const num = 1 + Math.floor(rand() * 250);
+    const street = STREET_NAMES[Math.floor(rand() * STREET_NAMES.length)];
+    const commune = COMMUNES[Math.floor(rand() * COMMUNES.length)];
+    const fakeAddress = `${street} ${num}, ${commune}`;
+
+    stops.push({
+      id: i + 1, lat, lng, fakeAddress, priority, serviceTimeMin,
+      timeWindow, parcelType
+    });
+  }
+  return stops;
+}
+
+/* ===== ROUTING ENGINE ===== */
+/* Architected for future swap.
+ *   RoutingEngine.optimize(stops, vehicle, options)
+ *   -> { orderedStops, totalDistanceKm, totalDurationMin, violations[] }
+ *
+ * Solver: Nearest Neighbor + 2-opt
+ * Distance: Haversine
+ * Vehicle constraints: pre-filter incompatible stops, report filtered count
+ * Time windows: soft penalty; missed windows logged as violations
+ */
+const RoutingEngine = (function () {
+
+  function haversineKm(a, b) {
+    const R = 6371;
+    const toRad = x => x * Math.PI/180;
+    const dLat = toRad(b.lat - a.lat);
+    const dLng = toRad(b.lng - a.lng);
+    const lat1 = toRad(a.lat);
+    const lat2 = toRad(b.lat);
+    const h = Math.sin(dLat/2)**2 + Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLng/2)**2;
+    return 2 * R * Math.asin(Math.sqrt(h));
+  }
+
+  // SWAP POINT: OSRM /table matrix here
+  // Replace this O(n^2) haversine table with a single OSRM /table call
+  // returning a real road-network distance/duration matrix.
+  function buildDistanceMatrix(points) {
+    const n = points.length;
+    const m = new Array(n);
+    for (let i = 0; i < n; i++) {
+      m[i] = new Float32Array(n);
+      for (let j = 0; j < n; j++) {
+        m[i][j] = i === j ? 0 : haversineKm(points[i], points[j]);
+      }
+    }
+    return m;
+  }
+
+  // SWAP POINT: replace with OR-Tools VRP (WASM or backend call)
+  // Today: greedy Nearest Neighbour from depot, then 2-opt local search.
+  // Future: feed (matrix, demands, time windows, vehicle caps) into OR-Tools.
+  function nearestNeighbour(points, dist) {
+    const n = points.length;
+    const visited = new Uint8Array(n);
+    const order = [0]; // index 0 is depot
+    visited[0] = 1;
+    let cur = 0;
+    for (let step = 1; step < n; step++) {
+      let best = -1, bestD = Infinity;
+      for (let j = 1; j < n; j++) {
+        if (visited[j]) continue;
+        if (dist[cur][j] < bestD) { bestD = dist[cur][j]; best = j; }
+      }
+      visited[best] = 1;
+      order.push(best);
+      cur = best;
+    }
+    order.push(0); // return to depot
+    return order;
+  }
+
+  function tourLength(order, dist) {
+    let total = 0;
+    for (let i = 0; i < order.length - 1; i++) total += dist[order[i]][order[i+1]];
+    return total;
+  }
+
+  function twoOpt(order, dist, maxIter = 3000) {
+    const n = order.length;
+    let improved = true;
+    let iter = 0;
+    while (improved && iter < maxIter) {
+      improved = false;
+      // skip first & last (depot)
+      for (let i = 1; i < n - 2; i++) {
+        for (let k = i + 1; k < n - 1; k++) {
+          const a = order[i-1], b = order[i], c = order[k], d = order[k+1];
+          const before = dist[a][b] + dist[c][d];
+          const after  = dist[a][c] + dist[b][d];
+          if (after + 1e-9 < before) {
+            // reverse segment i..k
+            let lo = i, hi = k;
+            while (lo < hi) { const t = order[lo]; order[lo] = order[hi]; order[hi] = t; lo++; hi--; }
+            improved = true;
+            iter++;
+            if (iter >= maxIter) break;
+          }
+        }
+        if (iter >= maxIter) break;
+      }
+    }
+    return order;
+  }
+
+  function parseHHMM(s) {
+    const [h,m] = s.split(":").map(Number);
+    return h * 60 + m;
+  }
+
+  function fmtHHMM(min) {
+    const h = Math.floor(min / 60);
+    const m = Math.floor(min % 60);
+    return String(h).padStart(2,"0") + ":" + String(m).padStart(2,"0");
+  }
+
+  function optimize(stops, vehicle, options = {}) {
+    const {
+      respectWindows = true,
+      onlyPriority   = false,
+      weight         = 0.5, // 0=distance, 1=time
+      depot          = BRUSSELS,
+      startTime      = "08:00"
+    } = options;
+
+    const violations = [];
+    let filteredCount = 0;
+
+    // ---- Vehicle pre-filter ----
+    let candidates = stops.filter(s => {
+      if (!vehicle.allowed.includes(s.parcelType)) {
+        filteredCount++;
+        return false;
+      }
+      if (onlyPriority && s.priority !== 1) return false;
+      return true;
+    });
+
+    if (candidates.length > vehicle.maxStops) {
+      // Keep priority first, then truncate
+      candidates.sort((a,b) => a.priority - b.priority);
+      const dropped = candidates.length - vehicle.maxStops;
+      candidates = candidates.slice(0, vehicle.maxStops);
+      violations.push({
+        type: "capacity",
+        message: `Voertuig kan maar ${vehicle.maxStops} stops verwerken; ${dropped} stops weggelaten.`
+      });
+    }
+
+    if (candidates.length === 0) {
+      return {
+        orderedStops: [],
+        totalDistanceKm: 0,
+        totalDurationMin: 0,
+        violations,
+        filteredCount,
+        depot
+      };
+    }
+
+    // ---- Build points list with depot at index 0 ----
+    const points = [{ lat: depot.lat, lng: depot.lng, depot: true }, ...candidates];
+
+    // SWAP POINT: OSRM /table matrix here
+    const dist = buildDistanceMatrix(points);
+
+    // Time matrix derived from distance / vehicle speed (min)
+    // For real OSRM this would come from the same /table call.
+    const timeMin = (i, j) => (dist[i][j] / vehicle.speedKmh) * 60;
+
+    // Combined cost matrix used by solver.
+    // weight 0 -> pure distance; weight 1 -> pure time.
+    // Normalize time-per-km roughly so the slider is balanced.
+    const w = weight;
+    const norm = 60 / vehicle.speedKmh; // min per km
+    const cost = new Array(points.length);
+    for (let i = 0; i < points.length; i++) {
+      cost[i] = new Float32Array(points.length);
+      for (let j = 0; j < points.length; j++) {
+        const distComp = dist[i][j];
+        const timeComp = (dist[i][j] / vehicle.speedKmh) * 60 / norm; // back to km-equivalent
+        cost[i][j] = (1 - w) * distComp + w * timeComp;
+      }
+    }
+
+    // SWAP POINT: replace with OR-Tools VRP (WASM or backend call)
+    let order = nearestNeighbour(points, cost);
+    order = twoOpt(order, cost);
+
+    // ---- Compute totals & time-window violations along route ----
+    let totalDistanceKm = 0;
+    let totalDurationMin = 0;
+    let clock = parseHHMM(startTime);
+    const orderedStops = [];
+
+    for (let i = 0; i < order.length - 1; i++) {
+      const fromIdx = order[i];
+      const toIdx   = order[i+1];
+      const segDist = dist[fromIdx][toIdx];
+      const segTime = timeMin(fromIdx, toIdx);
+      totalDistanceKm += segDist;
+      totalDurationMin += segTime;
+      clock += segTime;
+
+      if (toIdx !== 0) {
+        const stop = points[toIdx];
+        const arrival = clock;
+
+        // Time-window check
+        let twViolation = null;
+        if (stop.timeWindow) {
+          const ws = parseHHMM(stop.timeWindow.start);
+          const we = parseHHMM(stop.timeWindow.end);
+          if (respectWindows) {
+            if (arrival < ws) {
+              // wait until window opens (no violation, just idle)
+              const wait = ws - arrival;
+              clock += wait;
+              totalDurationMin += wait;
+            } else if (arrival > we) {
+              twViolation = {
+                stopId: stop.id,
+                arrival: fmtHHMM(arrival),
+                window: `${stop.timeWindow.start}-${stop.timeWindow.end}`
+              };
+              violations.push({
+                type: "timeWindow",
+                ...twViolation,
+                message: `Stop #${stop.id}: aankomst ${fmtHHMM(arrival)} buiten venster ${stop.timeWindow.start}-${stop.timeWindow.end}`
+              });
+            }
+          } else if (arrival > we) {
+            twViolation = {
+              stopId: stop.id,
+              arrival: fmtHHMM(arrival),
+              window: `${stop.timeWindow.start}-${stop.timeWindow.end}`
+            };
+          }
+        }
+
+        const arrTime = fmtHHMM(arrival);
+        clock += stop.serviceTimeMin;
+        totalDurationMin += stop.serviceTimeMin;
+
+        orderedStops.push({
+          ...stop,
+          arrivalTime: arrTime,
+          violation: twViolation
+        });
+      }
+    }
+
+    return {
+      orderedStops,
+      totalDistanceKm,
+      totalDurationMin,
+      violations,
+      filteredCount,
+      depot
+    };
+  }
+
+  return { optimize, haversineKm };
+})();
+
+/* ===== UI ===== */
+/* State, Leaflet map, sidebar/results/schedule renderers, controls. */
+
+const state = {
+  vehicleId: "van",
+  weight: 0.5,
+  respectWindows: true,
+  onlyPriority: false,
+  stopCount: 100,
+  stops: [],
+  result: null,
+  // map artifacts
+  map: null,
+  markersLayer: null,
+  routeLayer: null,
+  depotMarker: null,
+  animTimer: null
+};
+
+/* ---- Init Leaflet map ---- */
+function initMap() {
+  state.map = L.map("map", { zoomControl: true }).setView([BRUSSELS.lat, BRUSSELS.lng], 12);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    attribution: '&copy; OpenStreetMap contributors',
+    maxZoom: 19
+  }).addTo(state.map);
+
+  state.markersLayer = L.layerGroup().addTo(state.map);
+  state.routeLayer   = L.layerGroup().addTo(state.map);
+
+  const depotIcon = L.divIcon({
+    className: "",
+    html: '<div class="num-marker depot">🏢</div>',
+    iconSize: [36,36], iconAnchor: [18,18]
+  });
+  state.depotMarker = L.marker([BRUSSELS.lat, BRUSSELS.lng], { icon: depotIcon, zIndexOffset: 1000 })
+    .bindPopup("<b>Depot</b><br/>Brussel centrum")
+    .addTo(state.map);
+}
+
+/* ---- Render vehicle radio cards ---- */
+function renderVehicles() {
+  const wrap = document.getElementById("vehicleOptions");
+  wrap.innerHTML = "";
+  Object.values(VEHICLES).forEach(v => {
+    const card = document.createElement("label");
+    card.className = "vehicle-card" + (state.vehicleId === v.id ? " selected" : "");
+    card.innerHTML = `
+      <input type="radio" name="vehicle" value="${v.id}" ${state.vehicleId === v.id ? "checked" : ""}/>
+      <div class="vehicle-icon">${v.icon}</div>
+      <div class="vehicle-info">
+        <div class="name">${v.name}</div>
+        <div class="meta">max ${v.maxStops} stops · ${v.speedKmh} km/u</div>
+      </div>
+    `;
+    card.querySelector("input").addEventListener("change", e => {
+      state.vehicleId = e.target.value;
+      renderVehicles();
+    });
+    wrap.appendChild(card);
+  });
+}
+
+/* ---- Render markers (unoptimized, just stops) ---- */
+function renderStopsOnMap(stops) {
+  state.markersLayer.clearLayers();
+  state.routeLayer.clearLayers();
+  stops.forEach((s, i) => {
+    const icon = L.divIcon({
+      className: "",
+      html: `<div class="num-marker ${s.priority === 1 ? "prio" : ""}">${s.id}</div>`,
+      iconSize: [28,28], iconAnchor: [14,14]
+    });
+    L.marker([s.lat, s.lng], { icon })
+      .bindPopup(stopPopup(s, null))
+      .addTo(state.markersLayer);
+  });
+}
+
+/* ---- Render optimized route on map ---- */
+function renderRoute(result) {
+  state.markersLayer.clearLayers();
+  state.routeLayer.clearLayers();
+  if (state.animTimer) { clearInterval(state.animTimer); state.animTimer = null; }
+
+  const { orderedStops, depot } = result;
+  if (orderedStops.length === 0) return;
+
+  // Markers (numbered by route order)
+  orderedStops.forEach((s, idx) => {
+    const num = idx + 1;
+    const icon = L.divIcon({
+      className: "",
+      html: `<div class="num-marker ${s.priority === 1 ? "prio" : ""}">${num}</div>`,
+      iconSize: [28,28], iconAnchor: [14,14]
+    });
+    const m = L.marker([s.lat, s.lng], { icon })
+      .bindPopup(stopPopup(s, num))
+      .addTo(state.markersLayer);
+    m._stopId = s.id;
+  });
+
+  // Polyline path: depot -> stops -> depot
+  const path = [
+    [depot.lat, depot.lng],
+    ...orderedStops.map(s => [s.lat, s.lng]),
+    [depot.lat, depot.lng]
+  ];
+
+  // Animated draw
+  const drawn = [];
+  const line = L.polyline([], { color: "#E2231A", weight: 4, opacity: 0.85 }).addTo(state.routeLayer);
+  let i = 0;
+  const stepCount = path.length;
+  const interval = Math.max(8, Math.min(40, 2400 / stepCount));
+  state.animTimer = setInterval(() => {
+    drawn.push(path[i]);
+    line.setLatLngs(drawn);
+    i++;
+    if (i >= stepCount) {
+      clearInterval(state.animTimer);
+      state.animTimer = null;
+    }
+  }, interval);
+
+  // Fit bounds
+  const bounds = L.latLngBounds(path);
+  state.map.fitBounds(bounds, { padding: [40,40] });
+}
+
+function stopPopup(stop, routeNum) {
+  const tw = stop.timeWindow ? `<div><b>Tijdsvenster:</b> ${stop.timeWindow.start}–${stop.timeWindow.end}</div>` : "";
+  const arr = stop.arrivalTime ? `<div><b>Aankomst:</b> ${stop.arrivalTime}</div>` : "";
+  const viol = stop.violation ? `<div style="color:#E2231A"><b>⚠ Buiten venster</b></div>` : "";
+  const num = routeNum != null ? `<div><b>Volgorde:</b> #${routeNum}</div>` : "";
+  return `
+    <div style="font-size:13px; min-width:200px">
+      <div style="font-weight:600; margin-bottom:4px">Stop ${stop.id}</div>
+      <div>${stop.fakeAddress}</div>
+      <hr style="margin:6px 0; border:0; border-top:1px solid #eee"/>
+      <div><b>Type:</b> ${stop.parcelType} · <b>Prio:</b> ${stop.priority === 1 ? "Ja" : "Nee"}</div>
+      <div><b>Service:</b> ${stop.serviceTimeMin} min</div>
+      ${tw}${num}${arr}${viol}
+    </div>
+  `;
+}
+
+/* ---- Render results panel ---- */
+function renderResults(result) {
+  const el = document.getElementById("results");
+  if (!result) {
+    el.innerHTML = `<div class="empty">Nog geen route berekend.</div>`;
+    return;
+  }
+  const { orderedStops, totalDistanceKm, totalDurationMin, violations, filteredCount } = result;
+  const h = Math.floor(totalDurationMin / 60);
+  const m = Math.round(totalDurationMin % 60);
+  const violCount = violations.length;
+  const filterMsg = filteredCount > 0
+    ? `<div style="font-size:11px; color:var(--muted); margin-top:8px">${filteredCount} stops uitgefilterd (incompatibel met voertuig)</div>`
+    : "";
+
+  el.innerHTML = `
+    <div class="stat-grid">
+      <div class="stat">
+        <div class="v">${totalDistanceKm.toFixed(1)} km</div>
+        <div class="l">Totale afstand</div>
+      </div>
+      <div class="stat">
+        <div class="v">${h}u${String(m).padStart(2,"0")}</div>
+        <div class="l">Totale tijd</div>
+      </div>
+      <div class="stat">
+        <div class="v">${orderedStops.length}</div>
+        <div class="l">Stops</div>
+      </div>
+      <div class="stat ${violCount > 0 ? "violation" : ""}">
+        <div class="v">${violCount}</div>
+        <div class="l">Schendingen</div>
+      </div>
+    </div>
+    ${filterMsg}
+  `;
+}
+
+/* ---- Render schedule list (right panel) ---- */
+function renderSchedule(result) {
+  const el = document.getElementById("scheduleList");
+  if (!result || result.orderedStops.length === 0) {
+    el.innerHTML = `<div class="empty-msg">Bereken een route om het schema te zien.</div>`;
+    return;
+  }
+  const html = result.orderedStops.map((s, idx) => {
+    const num = idx + 1;
+    const tw = s.timeWindow
+      ? `<span class="badge tw">${s.timeWindow.start}–${s.timeWindow.end}</span>` : "";
+    const prio = s.priority === 1 ? `<span class="badge prio">PRIO</span>` : "";
+    const viol = s.violation ? `<span class="badge violation">⚠ buiten venster</span>` : "";
+    return `
+      <div class="stop-item ${s.violation ? "violation" : ""}" data-stop-id="${s.id}">
+        <div class="stop-num ${s.priority === 1 ? "prio" : ""}">${num}</div>
+        <div class="stop-info">
+          <div class="addr">${s.fakeAddress}</div>
+          <div class="meta">
+            🕒 ${s.arrivalTime} · ${s.parcelType} · ${s.serviceTimeMin} min
+            ${prio}${tw}${viol}
+          </div>
+        </div>
+      </div>
+    `;
+  }).join("");
+  el.innerHTML = html;
+
+  // Click -> zoom to stop · Hover -> highlight marker
+  el.querySelectorAll(".stop-item").forEach(item => {
+    const id = Number(item.dataset.stopId);
+    item.addEventListener("click", () => {
+      const stop = result.orderedStops.find(s => s.id === id);
+      if (!stop) return;
+      state.map.setView([stop.lat, stop.lng], 16, { animate: true });
+      state.markersLayer.eachLayer(l => {
+        if (l._stopId === id) l.openPopup();
+      });
+    });
+    item.addEventListener("mouseenter", () => highlightMarker(id, true));
+    item.addEventListener("mouseleave", () => highlightMarker(id, false));
+  });
+}
+
+function highlightMarker(stopId, on) {
+  state.markersLayer.eachLayer(l => {
+    if (l._stopId !== stopId) return;
+    const el = l.getElement();
+    if (!el) return;
+    const inner = el.querySelector(".num-marker");
+    if (!inner) return;
+    inner.classList.toggle("highlight", on);
+  });
+}
+
+/* ---- Toast ---- */
+function toast(msg, ms = 2200) {
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.classList.add("show");
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => el.classList.remove("show"), ms);
+}
+
+/* ---- Optimize action ---- */
+async function runOptimize() {
+  const btn = document.getElementById("optimizeBtn");
+  btn.disabled = true;
+  btn.classList.add("loading");
+  btn.querySelector(".btn-label").textContent = "Bezig met berekenen…";
+
+  // Yield so spinner paints
+  await new Promise(r => setTimeout(r, 30));
+
+  try {
+    const vehicle = VEHICLES[state.vehicleId];
+    if (state.stops.length !== state.stopCount) {
+      state.stops = generateStops(state.stopCount);
+    }
+
+    const t0 = performance.now();
+    const result = RoutingEngine.optimize(state.stops, vehicle, {
+      respectWindows: state.respectWindows,
+      onlyPriority:   state.onlyPriority,
+      weight:         state.weight,
+      depot:          BRUSSELS,
+      startTime:      "08:00"
+    });
+    const elapsed = Math.round(performance.now() - t0);
+
+    state.result = result;
+    renderRoute(result);
+    renderResults(result);
+    renderSchedule(result);
+
+    toast(`Route berekend in ${elapsed} ms — ${result.orderedStops.length} stops`);
+  } catch (e) {
+    console.error(e);
+    toast("Fout bij berekenen: " + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.classList.remove("loading");
+    btn.querySelector(".btn-label").textContent = "Optimaliseer route";
+  }
+}
+
+/* ---- Wire up controls ---- */
+function bindControls() {
+  document.getElementById("weightSlider").addEventListener("input", e => {
+    state.weight = Number(e.target.value) / 100;
+    const distPct = 100 - Number(e.target.value);
+    const timePct = Number(e.target.value);
+    document.getElementById("weightVal").textContent = `${distPct}/${timePct}`;
+  });
+  document.getElementById("tglWindows").addEventListener("change", e => {
+    state.respectWindows = e.target.checked;
+  });
+  document.getElementById("tglPrio").addEventListener("change", e => {
+    state.onlyPriority = e.target.checked;
+  });
+  document.getElementById("stopCount").addEventListener("change", e => {
+    let v = Number(e.target.value);
+    if (isNaN(v)) v = 100;
+    v = Math.max(10, Math.min(250, v));
+    e.target.value = v;
+    state.stopCount = v;
+    state.stops = generateStops(v); // regenerate
+    renderStopsOnMap(state.stops);
+    state.result = null;
+    renderResults(null);
+    renderSchedule(null);
+  });
+  document.getElementById("optimizeBtn").addEventListener("click", runOptimize);
+
+  document.getElementById("resetBtn").addEventListener("click", () => {
+    // New random seed each reset
+    const seed = Math.floor(Math.random() * 1e9);
+    state.stops = generateStops(state.stopCount, seed);
+    state.result = null;
+    if (state.animTimer) { clearInterval(state.animTimer); state.animTimer = null; }
+    renderStopsOnMap(state.stops);
+    state.routeLayer.clearLayers();
+    renderResults(null);
+    renderSchedule(null);
+    state.map.setView([BRUSSELS.lat, BRUSSELS.lng], 12);
+    toast(`Nieuwe set van ${state.stopCount} stops gegenereerd`);
+  });
+
+  document.getElementById("toggleRight").addEventListener("click", () => {
+    const p = document.getElementById("rightPanel");
+    p.classList.toggle("collapsed");
+    document.getElementById("toggleRight").textContent =
+      p.classList.contains("collapsed") ? "‹" : "›";
+    setTimeout(() => state.map.invalidateSize(), 260);
+  });
+}
+
+/* ---- Boot ---- */
+window.addEventListener("DOMContentLoaded", () => {
+  initMap();
+  renderVehicles();
+  bindControls();
+  state.stops = generateStops(state.stopCount);
+  renderStopsOnMap(state.stops);
+});
+</script>
+</body>
+</html>
