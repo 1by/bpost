@@ -7,7 +7,6 @@
 <link
   rel="stylesheet"
   href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-  integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
   crossorigin=""
 />
 <style>
@@ -632,7 +631,6 @@
 
 <script
   src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-  integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
   crossorigin=""
 ></script>
 
@@ -1404,13 +1402,35 @@ function updateFabBadge(count) {
 }
 
 /* ---- Boot ---- */
-window.addEventListener("DOMContentLoaded", () => {
+function boot() {
+  // Guard: Leaflet may still be loading (e.g. when this file is served
+  // via html-preview.github.io which proxies external scripts).
+  if (typeof L === "undefined") {
+    boot._tries = (boot._tries || 0) + 1;
+    if (boot._tries > 200) { // ~10s max
+      document.getElementById("map").innerHTML =
+        '<div style="padding:24px;color:#991b1b;font:14px sans-serif">' +
+        'Leaflet kon niet geladen worden. Controleer je internetverbinding ' +
+        'of open dit bestand direct (niet via een preview-proxy).</div>';
+      return;
+    }
+    setTimeout(boot, 50);
+    return;
+  }
   initMap();
   renderVehicles();
   bindControls();
   state.stops = generateStops(state.stopCount);
   renderStopsOnMap(state.stops);
-});
+}
+
+if (document.readyState === "loading") {
+  window.addEventListener("DOMContentLoaded", boot);
+} else {
+  // DOM already parsed (typical when this file is injected by a
+  // preview service after DOMContentLoaded already fired).
+  boot();
+}
 </script>
 </body>
 </html>
